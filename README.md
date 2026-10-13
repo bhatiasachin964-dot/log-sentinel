@@ -14,9 +14,12 @@ A Python tool that analyses Linux SSH authentication logs (`/var/log/auth.log`) 
 ## Features
 - Parses real Linux SSH logs using regular expressions
 - Sliding time-window detection for brute-force attacks
-- Colour-coded severity report in the terminal
+- Colour-coded severity report in the terminal (`--no-color` for logs/CI)
+- Reads **gzip'ed** logs (`auth.log.1.gz`) transparently — no extra step for logrotate output
+- Machine-readable **JSON** output that pipes cleanly into `jq` or cron
 - Exports alerts to **JSON** and **CSV** for further analysis
 - Suggests firewall (`ufw`) block commands for high-risk IPs
+- Pins the log's year with `--year` so stored logs analyse deterministically
 - No external libraries, only the Python standard library
 
 ## How to Run
@@ -24,22 +27,50 @@ Requires Python 3.8+.
 
 ```
 python log_sentinel.py --file sample_auth.log
+sudo python3 -m log_sentinel --file /var/log/auth.log --output /var/tmp/ssh-report
 ```
 
-Options:
-```
---file       Path to the log file (default: sample_auth.log)
---threshold  Failed logins that count as brute force (default: 5)
---window     Time window in minutes (default: 10)
---output     Report file name without extension (default: security_report)
+Install as a command (optional): `pip install .`, then use `log-sentinel ...` with the same flags.
+
+### Options
+
+| Flag | Default | Description |
+|---|---|---|
+| `--file` | `sample_auth.log` | Path to the auth log (`.gz` auto-detected) |
+| `--threshold` | `5` | Failed logins that count as brute force (and as pre-compromise) |
+| `--window` | `10` | Time window in minutes for the brute-force burst |
+| `--min-users` | `3` | Usernames an IP must try to count as enumeration |
+| `--output` | `security_report` | Report file name (no extension); parent dirs are created |
+| `--year` | *(current)* | Stamp the un-dated syslog timestamps with this year |
+| `--json` | off | Print one machine-readable JSON report to stdout (no colour report) |
+| `--no-color` | off | Disable ANSI colour codes (clean for files/CI) |
+| `--version` | — | Print the version and exit |
+
+### Examples
+
+Analyse a single file, then pipe just the alerts through `jq`:
+
+```bash
+python log_sentinel.py --file /var/log/auth.log --json | jq .alerts
 ```
 
-To analyse a real Linux server's log:
+Handle a compressed rotation and write reports to a nested directory:
+
+```bash
+sudo python log_sentinel.py --file /var/log/auth.log.1.gz --output /var/tmp/ssh/report
 ```
-sudo python3 log_sentinel.py --file /var/log/auth.log
+
+Script it (drop-in for cron):
+
+```python
+from log_sentinel import parse_log, detect_brute_force
+
+events = parse_log("/var/log/auth.log")
+alerts = detect_brute_force(events, threshold=5, window_minutes=10)
 ```
 
 ## Sample Output
+
 ```
 [CRITICAL] Possible account compromise  ->  198.51.100.77
     Logged in as 'ubuntu' at Sep 27 13:05:12 after 9 failed attempts
@@ -50,7 +81,18 @@ sudo python3 log_sentinel.py --file /var/log/auth.log
     MITRE ATT&CK: T1110 - Brute Force
 ```
 
+## Development / Testing
+
+The detection logic is pure and fully offline — no network, sudo, or real logs
+needed to test it.
+
+```bash
+python -m pytest tests/ -v
+ruff check log_sentinel.py tests/
+```
+
 ## About the Sample Log
+
 `sample_auth.log` is a synthetic log containing normal user activity plus three simulated attackers. The attacker IPs use reserved documentation ranges (RFC 5737), so they are not real addresses.
 
 ## What I Learned
