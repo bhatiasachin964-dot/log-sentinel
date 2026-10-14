@@ -99,13 +99,21 @@ def detect_brute_force(events, threshold, window_minutes):
 
 
 def detect_success_after_failures(events, threshold):
-    """Flag a successful login from an IP that previously failed many times."""
+    """Flag a successful login from an IP that previously failed many times.
+
+    Each compromised IP is reported once, at its first successful login after
+    the failure threshold was reached.
+    """
     alerts = []
     fail_count = defaultdict(int)
+    reported = set()
     for e in sorted(events, key=lambda x: x["time"]):
         if e["type"] == "failed":
             fail_count[e["ip"]] += 1
-        elif e["type"] == "accepted" and fail_count[e["ip"]] >= threshold:
+        elif (e["type"] == "accepted"
+              and fail_count[e["ip"]] >= threshold
+              and e["ip"] not in reported):
+            reported.add(e["ip"])
             alerts.append({
                 "severity": "CRITICAL",
                 "rule": "Possible account compromise",
