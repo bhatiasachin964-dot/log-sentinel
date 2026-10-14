@@ -157,3 +157,25 @@ def test_save_reports_writes_matching_json_and_csv(tmp_path):
     with open(prefix + ".csv", newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
     assert rows == alerts
+
+
+def test_compromised_ip_is_reported_only_once(tmp_path):
+    # Regression: later successful logins from an already-flagged IP must not repeat the alert
+    lines = [failed_line(f"Sep 28 10:00:{s:02d}", "ubuntu", "198.51.100.77") for s in range(5)]
+    lines += [
+        accepted_line("Sep 28 10:01:00", "ubuntu", "198.51.100.77"),
+        accepted_line("Sep 28 10:02:00", "ubuntu", "198.51.100.77"),
+        accepted_line("Sep 28 10:03:00", "ubuntu", "198.51.100.77"),
+    ]
+    alerts = detect_success_after_failures(events_from(tmp_path, lines), threshold=5)
+    assert len(alerts) == 1
+    assert "10:01:00" in alerts[0]["details"]
+
+
+def test_different_compromised_ips_are_each_reported(tmp_path):
+    lines = []
+    for ip in ("198.51.100.77", "198.51.100.78"):
+        lines += [failed_line(f"Sep 28 10:00:{s:02d}", "ubuntu", ip) for s in range(5)]
+        lines.append(accepted_line("Sep 28 10:01:00", "ubuntu", ip))
+    alerts = detect_success_after_failures(events_from(tmp_path, lines), threshold=5)
+    assert sorted(a["ip"] for a in alerts) == ["198.51.100.77", "198.51.100.78"]
