@@ -208,9 +208,13 @@ def main():
     os.system("")  # enables coloured output in Windows Command Prompt
     parser = argparse.ArgumentParser(description="Detect SSH attacks in Linux auth logs.")
     parser.add_argument("--file", default="sample_auth.log", help="Path to the auth log")
-    parser.add_argument("--threshold", type=int, default=5, help="Failures that count as brute force")
+    parser.add_argument(
+        "--threshold", type=int, default=5, help="Failures that count as brute force"
+    )
     parser.add_argument("--window", type=int, default=10, help="Time window in minutes")
-    parser.add_argument("--output", default="security_report", help="Report file name (no extension)")
+    parser.add_argument(
+        "--output", default="security_report", help="Report file name (no extension)"
+    )
     args = parser.parse_args()
 
     try:
