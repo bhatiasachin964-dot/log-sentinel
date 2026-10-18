@@ -14,13 +14,13 @@ Usage:
   python log_sentinel.py --file /var/log/auth.log --threshold 5 --window 10
 """
 
-import os
-import re
+import argparse
 import csv
 import json
-import argparse
-from datetime import datetime, timedelta
+import os
+import re
 from collections import defaultdict
+from datetime import datetime, timedelta
 
 # ---------------------------------------------------------------
 # 1. PATTERNS: regular expressions that match SSH log lines
