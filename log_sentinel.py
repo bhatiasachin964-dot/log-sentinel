@@ -32,7 +32,7 @@ FAILED = re.compile(
     TIMESTAMP + r".*sshd\[\d+\]: Failed password for (invalid user )?(?P<user>\S+) from (?P<ip>\S+)"
 )
 ACCEPTED = re.compile(
-    TIMESTAMP + r".*sshd\[\d+\]: Accepted (password|publickey) for (?P<user>\S+) from (?P<ip>\S+)"
+    TIMESTAMP + r".*sshd\[\d+\]: Accepted (?P<method>\S+) for (?P<user>\S+) from (?P<ip>\S+)"
 )
 
 # Colours for the terminal output
@@ -41,8 +41,15 @@ SEVERITY_COLOUR = {"CRITICAL": RED, "HIGH": RED, "MEDIUM": YELLOW, "LOW": GREEN}
 
 
 def parse_time(text):
-    """Syslog timestamps have no year, so we add the current year."""
-    return datetime.strptime(f"{datetime.now().year} {text}", "%Y %b %d %H:%M:%S")
+    """Syslog timestamps have no year, so we add the current year.
+
+    Returns None if the date is impossible for that year (e.g. Feb 29 in a
+    non-leap year), so one odd line cannot crash the whole analysis.
+    """
+    try:
+        return datetime.strptime(f"{datetime.now().year} {text}", "%Y %b %d %H:%M:%S")
+    except ValueError:
+        return None
 
 
 # ---------------------------------------------------------------
@@ -56,8 +63,11 @@ def parse_log(path):
             for event_type, pattern in (("failed", FAILED), ("accepted", ACCEPTED)):
                 match = pattern.search(line)
                 if match:
+                    when = parse_time(match.group("time"))
+                    if when is None:
+                        break  # skip lines with an unparseable timestamp
                     events.append({
-                        "time": parse_time(match.group("time")),
+                        "time": when,
                         "type": event_type,
                         "user": match.group("user"),
                         "ip": match.group("ip"),
@@ -191,6 +201,72 @@ def print_report(events, alerts):
         print()
 
 
+ACTIONS = {
+    "Possible account compromise": "Treat as an incident: check the account's activity, "
+                                   "rotate its credentials and review the source IP.",
+    "Brute-force attack": "Review and consider blocking the source IP; "
+                          "enable key-only login or fail2ban.",
+    "Direct root login attempt": "Disable direct root login over SSH (PermitRootLogin no).",
+    "Username enumeration": "Check whether the usernames tried are real accounts; "
+                            "review the source IP.",
+}
+SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+
+
+def build_summary(events, alerts):
+    """Build a plain-English Markdown incident summary from the detected alerts.
+
+    The text is generated only from the data (counts, IPs, rules). It does not
+    guess attacker intent or timelines the log cannot prove.
+    """
+    failed = sum(1 for e in events if e["type"] == "failed")
+    accepted = len(events) - failed
+    lines = ["# SSH Security Incident Summary", ""]
+    lines.append(
+        f"Analysed {len(events)} SSH events ({failed} failed logins, "
+        f"{accepted} successful logins) from {len({e['ip'] for e in events})} source IPs."
+    )
+    lines.append("")
+
+    if not alerts:
+        lines.append("**No suspicious activity was detected.**")
+        return "\n".join(lines) + "\n"
+
+    counts = defaultdict(int)
+    for a in alerts:
+        counts[a["severity"]] += 1
+    worst = min(counts, key=lambda s: SEVERITY_ORDER[s])
+    breakdown = ", ".join(f"{counts[s]} {s}" for s in sorted(counts, key=SEVERITY_ORDER.get))
+    lines.append(f"**Overall severity: {worst}.** Alerts raised: {len(alerts)} ({breakdown}).")
+    lines.append("")
+    lines.append("## Alerts")
+    lines.append("")
+    lines.append("| Severity | Rule | Source IP | Details | MITRE ATT&CK |")
+    lines.append("|---|---|---|---|---|")
+    for a in sorted(alerts, key=lambda x: SEVERITY_ORDER[x["severity"]]):
+        lines.append(
+            f"| {a['severity']} | {a['rule']} | {a['ip']} | {a['details']} | {a['mitre']} |"
+        )
+    lines.append("")
+    lines.append("## Recommended actions")
+    lines.append("")
+    for rule in dict.fromkeys(a["rule"] for a in sorted(
+            alerts, key=lambda x: SEVERITY_ORDER[x["severity"]])):
+        lines.append(f"- **{rule}:** {ACTIONS.get(rule, 'Review manually.')}")
+    lines.append("")
+    lines.append(
+        "_Automated rule-based summary. Verify against the raw log before taking action._"
+    )
+    return "\n".join(lines) + "\n"
+
+
+def save_summary(events, alerts, prefix):
+    path = f"{prefix}_summary.md"
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(build_summary(events, alerts))
+    print(f"  Summary saved: {path}\n")
+
+
 def save_reports(alerts, prefix):
     with open(f"{prefix}.json", "w", encoding="utf-8") as f:
         json.dump(alerts, f, indent=2)
@@ -215,6 +291,10 @@ def main():
     parser.add_argument(
         "--output", default="security_report", help="Report file name (no extension)"
     )
+    parser.add_argument(
+        "--summary", action="store_true",
+        help="Also write a plain-English Markdown incident summary"
+    )
     args = parser.parse_args()
 
     try:
@@ -236,6 +316,8 @@ def main():
     print_report(events, alerts)
     if alerts:
         save_reports(alerts, args.output)
+    if args.summary:
+        save_summary(events, alerts, args.output)
 
 
 if __name__ == "__main__":
