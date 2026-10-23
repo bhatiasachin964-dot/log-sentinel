@@ -3,9 +3,9 @@ import json
 
 from log_sentinel import (
     detect_brute_force,
+    detect_password_spraying,
     detect_root_attempts,
     detect_success_after_failures,
-    detect_user_enumeration,
     parse_log,
     save_reports,
 )
@@ -121,21 +121,21 @@ def test_root_attempts_flagged_with_count(tmp_path):
     assert alerts[0]["details"] == "2 failed login(s) as root"
 
 
-# ---------- username enumeration ----------
+# ---------- password spraying ----------
 
-def test_user_enumeration_flagged_at_three_usernames(tmp_path):
+def test_password_spraying_flagged_at_three_usernames(tmp_path):
     lines = [failed_line(f"Sep 28 10:00:{i:02d}", name, "203.0.113.77", invalid=True)
              for i, name in enumerate(["admin", "test", "oracle"])]
-    alerts = detect_user_enumeration(events_from(tmp_path, lines))
+    alerts = detect_password_spraying(events_from(tmp_path, lines))
     assert len(alerts) == 1
     assert alerts[0]["ip"] == "203.0.113.77"
     assert "Tried 3 usernames" in alerts[0]["details"]
 
 
-def test_user_enumeration_not_flagged_below_minimum(tmp_path):
+def test_password_spraying_not_flagged_below_minimum(tmp_path):
     lines = [failed_line(f"Sep 28 10:00:{i:02d}", name, "203.0.113.77", invalid=True)
              for i, name in enumerate(["admin", "test"])]
-    assert detect_user_enumeration(events_from(tmp_path, lines)) == []
+    assert detect_password_spraying(events_from(tmp_path, lines)) == []
 
 
 # ---------- reports ----------
