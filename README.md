@@ -11,7 +11,9 @@ Built by a Technical Support Engineer who spends his days reading production log
 | CRITICAL | Possible account compromise | An IP failed many times, then logged in successfully | T1078 |
 | HIGH | Brute-force attack | Many failed logins from one IP within a short time window | T1110 |
 | MEDIUM | Direct root login attempt | Someone tried to log in as `root` | T1110.001 |
-| MEDIUM | Username enumeration | One IP guessed many different usernames | <!-- TODO: verify on attack.mitre.org. T1110.003 is Password Spraying, which may not match this rule --> T1110.003 |
+| MEDIUM | Possible password spraying | One IP failed logins across many different usernames | T1110.003 |
+
+The spraying rule flags the pattern MITRE ATT&CK's detection strategy for T1110.003 describes: authentication failures across many accounts. SSH logs don't record which password was tried, so it can't be told apart from credential stuffing (T1110.004), which is why the alert says "possible".
 
 ## Features
 - Parses real Linux SSH logs using regular expressions
@@ -62,7 +64,7 @@ sudo python3 log_sentinel.py --file /var/log/auth.log
 pip install -r requirements-dev.txt
 pytest -v
 ```
-49 tests cover parsing, each detection rule (including threshold and time-window boundaries), report export, the `--summary` output and an end-to-end CLI run. GitHub Actions runs them on Python 3.9 and 3.12, plus a smoke test on the sample log and a `ruff` lint check, on every push.
+50 tests cover parsing, each detection rule (including threshold and time-window boundaries), report export, the `--summary` output and an end-to-end CLI run. GitHub Actions runs them on Python 3.9 and 3.12, plus a smoke test on the sample log and a `ruff` lint check, on every push.
 
 A further 5 tests in `tests/test_edge_cases.py` are marked `xfail(strict=True)`: they describe the *desired* behaviour for the known limitations below, so they will start failing the moment a limitation is fixed and remind me to remove the marker.
 
@@ -71,7 +73,7 @@ Each of these is demonstrated by an `xfail` test in `tests/`.
 - **No year in syslog timestamps.** The current year is assumed, so an attack spanning New Year is ordered wrongly and can be missed.
 - **Compromise rule has no time window.** Failures are counted forever, so a few typos over several weeks followed by a login raises a false CRITICAL alert.
 - **Successful root logins are not flagged.** Only failed root attempts are, and a single typo already raises MEDIUM, which is noisy.
-- **Username enumeration counts valid usernames.** Several real users behind one NAT can look like enumeration.
+- **The password-spraying rule counts valid usernames too.** Several real users behind one NAT can look like spraying.
 - Rotated or compressed logs (`auth.log.1`, `.gz`) are not read automatically.
 
 ## How I Built This with AI

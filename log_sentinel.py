@@ -7,7 +7,7 @@ authentication log (like /var/log/auth.log) and detects signs of attack:
   1. Brute-force attacks     - many failed logins from one IP in a short time
   2. Possible compromise     - a successful login from an IP that failed many times
   3. Root login attempts     - someone trying to log in directly as 'root'
-  4. Username enumeration    - one IP guessing many different usernames
+  4. Password spraying       - one IP failing logins across many different usernames
 
 Usage:
   python log_sentinel.py --file sample_auth.log
@@ -150,15 +150,21 @@ def detect_root_attempts(events):
     } for ip, count in root_tries.items()]
 
 
-def detect_user_enumeration(events, min_users=3):
-    """Flag IPs that tried many different usernames."""
+def detect_password_spraying(events, min_users=3):
+    """Flag IPs whose failed logins span many different usernames.
+
+    This is the pattern MITRE ATT&CK describes for password spraying (T1110.003):
+    authentication failures across many accounts from one source. SSH logs do not
+    record which password was tried, so this cannot be told apart from credential
+    stuffing (T1110.004); the alert is therefore labelled "possible".
+    """
     users_by_ip = defaultdict(set)
     for e in events:
         if e["type"] == "failed":
             users_by_ip[e["ip"]].add(e["user"])
     return [{
         "severity": "MEDIUM",
-        "rule": "Username enumeration",
+        "rule": "Possible password spraying",
         "ip": ip,
         "details": f"Tried {len(users)} usernames: {', '.join(sorted(users)[:6])}"
                    + (" ..." if len(users) > 6 else ""),
@@ -207,8 +213,8 @@ ACTIONS = {
     "Brute-force attack": "Review and consider blocking the source IP; "
                           "enable key-only login or fail2ban.",
     "Direct root login attempt": "Disable direct root login over SSH (PermitRootLogin no).",
-    "Username enumeration": "Check whether the usernames tried are real accounts; "
-                            "review the source IP.",
+    "Possible password spraying": "Check whether any targeted usernames are real accounts "
+                                  "and enforce key-only SSH login; review the source IP.",
 }
 SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
 
@@ -310,7 +316,7 @@ def main():
         detect_brute_force(events, args.threshold, args.window)
         + detect_success_after_failures(events, args.threshold)
         + detect_root_attempts(events)
-        + detect_user_enumeration(events)
+        + detect_password_spraying(events)
     )
 
     print_report(events, alerts)
