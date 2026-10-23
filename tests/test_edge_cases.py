@@ -199,28 +199,37 @@ class TestRoot:
         assert ls.detect_root_attempts([ev("failed", "root", "5.5.5.5", "Sep 27 10:00:00")]) == []
 
 
-# ---------- username enumeration ----------
-class TestEnumeration:
+# ---------- password spraying ----------
+class TestPasswordSpraying:
     def test_many_usernames_flagged(self):
         events = [ev("failed", u, "7.7.7.7", f"Sep 27 10:0{i}:00")
                   for i, u in enumerate(["admin", "test", "oracle", "guest"])]
-        alerts = ls.detect_user_enumeration(events)
+        alerts = ls.detect_password_spraying(events)
         assert len(alerts) == 1 and "4 usernames" in alerts[0]["details"]
+
+    def test_label_and_mitre_mapping(self):
+        """Regression: the rule was labelled 'Username enumeration' but mapped to
+        T1110.003, which MITRE defines as password spraying."""
+        events = [ev("failed", u, "7.7.7.7", f"Sep 27 10:0{i}:00")
+                  for i, u in enumerate(["admin", "test", "oracle"])]
+        alert = ls.detect_password_spraying(events)[0]
+        assert alert["rule"] == "Possible password spraying"
+        assert alert["mitre"] == "T1110.003 - Password Spraying"
 
     def test_two_usernames_not_flagged(self):
         events = [ev("failed", u, "7.7.7.7", f"Sep 27 10:0{i}:00")
                   for i, u in enumerate(["a", "b"])]
-        assert ls.detect_user_enumeration(events) == []
+        assert ls.detect_password_spraying(events) == []
 
     def test_repeated_same_username_not_flagged(self):
-        assert ls.detect_user_enumeration(failures("7.7.7.7", 10, user="admin")) == []
+        assert ls.detect_password_spraying(failures("7.7.7.7", 10, user="admin")) == []
 
     @pytest.mark.xfail(strict=True, reason="KNOWN LIMITATION: counts valid usernames too, so "
-                       "3 real users behind one NAT look like enumeration")
+                       "3 real users behind one NAT look like password spraying")
     def test_three_valid_users_behind_nat_should_not_alert(self):
         events = [ev("failed", u, "5.5.5.5", f"Sep 27 10:0{i}:00")
                   for i, u in enumerate(["alice", "bob", "carol"])]
-        assert ls.detect_user_enumeration(events) == []
+        assert ls.detect_password_spraying(events) == []
 
 
 # ---------- reports ----------
