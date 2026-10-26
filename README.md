@@ -1,5 +1,8 @@
 # LogSentinel 🛡️
 
+[![Tests](https://github.com/bhatiasachin964-dot/log-sentinel/actions/workflows/tests.yml/badge.svg)](https://github.com/bhatiasachin964-dot/log-sentinel/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 A Python tool that analyses Linux SSH authentication logs (`/var/log/auth.log`) and detects signs of attack, mapped to the MITRE ATT&CK framework. Think of it as a tiny version of what a SIEM (like Splunk) does in a Security Operations Centre.
 
 Built by a Technical Support Engineer who spends his days reading production logs, so the rules are based on what actually shows up in incident tickets.
